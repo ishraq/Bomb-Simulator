@@ -16,3 +16,12 @@
 	sbc @0, tmp
 	pop tmp
 .endmacro
+; places string (@0) in program memory with correct padding
+.macro defstring
+	.if strlen(@0) & 1 ; odd length + null byte
+		.db @0, 0
+	.else ; even length + null byte, add padding byte
+		.db @0, 0, 0
+	.endif
+.endmacro
+

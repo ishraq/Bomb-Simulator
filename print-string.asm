@@ -1,3 +1,14 @@
+; prints string from program memory word address
+.macro puts
+	push r17
+	push r16
+	ldi r17, high(@0<<1)
+	ldi r16, low(@0<<1)
+	rcall print_string
+	pop r16
+	pop r17
+.endmacro
+
 .cseg
 ;takes in address to program memory in r17:r16
 ;prints string to lcd

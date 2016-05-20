@@ -1,7 +1,7 @@
 .include "m2560def.inc"
 
 .def tmp = r16
-.def do_display = r24 ; should screen be refreshed
+.def do_display = r22 ; should screen be refreshed
 .def stage = r23 ; what screen/stage it's at
 .def tmp_wordl = r24
 .def tmp_wordh = r25
@@ -42,6 +42,15 @@ timer_cnt: .byte 1 ; seconds left on timer
 .include "util.asm"
 .include "pot-util.asm"
 .include "pb-util.asm"
+.include "print-string.asm"
+
+; constants
+start_str1: defstring "2121 16s1"
+start_str2: defstring "Safe Cracker"
+
+start_cd_str1: defstring "2121 16s1"
+start_cd_str2: defstring "Starting in "
+start_cd_str3: defstring "..."
 
 reset:
 	; clear all registers
@@ -100,7 +109,9 @@ ovf0handler:
 		brne dont_display_start_screen
 			clr do_display
 			lcd_clear
-			do_lcd_data '0'
+			puts start_str1
+			lcd_row2
+			puts start_str2
 		dont_display_start_screen:
 
 		; check if continue to next screen
@@ -123,16 +134,18 @@ ovf0handler:
 	cpse stage, tmp
 	jmp not_start_countdown
 		; start countdown
-		; display screen
+
 		; display
 		cpi do_display, 1
 		brne dont_display_start_cd
 			clr do_display
 			lcd_clear
-			do_lcd_data '1'
+			puts start_cd_str1
 			lcd_row2
+			puts start_cd_str2
 			lds tmp, timer_cnt
 			rcall print_int
+			puts start_cd_str3
 		dont_display_start_cd:
 
 		; decrement timer countdown
@@ -143,7 +156,7 @@ ovf0handler:
 			ldi do_display, 1 ; activity occurs, need to refresh screen next cycle
 			; timer countdown is 0, on to next second
 			lds tmp, timer_cnt
-			cpi tmp, 0
+			subi tmp, 1
 			brne countdown_not_fin
 				; countdown finished, on to next screen
 				ldi stage, reset_pot
@@ -155,8 +168,7 @@ ovf0handler:
 				rjmp fin_start_countdown
 			
 			countdown_not_fin:
-			; timer second not 0, second--, restart countdown
-			dec tmp
+			; timer second not 0, restart countdown
 			sts timer_cnt, tmp
 			init_timer_cd_1s
 		fin_start_countdown:
@@ -166,6 +178,8 @@ ovf0handler:
 	cpi stage, reset_pot
 	brne not_reset_pot
 		; reset pot
+		lcd_clear
+		do_lcd_data '2'
 		reti
 	not_reset_pot:
 
