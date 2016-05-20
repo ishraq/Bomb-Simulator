@@ -25,7 +25,7 @@ pot_read:
 	breq nopot
 		clr tmp
 		sts potav, tmp
-		readword r17, r16, pot
+		read_word r17, r16, pot
 		ret
 	nopot:
 	ldi r16, 0xff
