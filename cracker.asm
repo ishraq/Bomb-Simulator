@@ -1,11 +1,13 @@
 .include "m2560def.inc"
 
+.def cur_code_char = r14 ; which character is being entered in the Enter Code screen
+.def game_iter = r15 ; how many games have been won so far in current round
 .def tmp = r16
 .def do_display = r22 ; should screen be refreshed
 .def stage = r23 ; what screen/stage it's at
 .def tmp_wordl = r24
 .def tmp_wordh = r25
-.equ ticks_per_sec = 1000
+.equ ticks_per_sec = 1000 ; oflows of timer0 in 1 sec
 
 .equ pot_eps = 5 ; pot reading < pot_eps is 0
 
@@ -27,6 +29,13 @@ timer_cnt: .byte 1 ; seconds left on timer
 pot_cd: .byte 2 ; overflows till pot is held for long enough
 pot_targ: .byte 2 ; target for find pot
 
+key_targ: .byte 1 ; target for find code
+key_cd: .byte 2 ; overflows till key is held for long enough
+
+key_code: .byte 3 ; the 3 letter code
+
+strobe_cd: .byte 1 ; the countdown to toggle the strobe
+
 .cseg
 .org 0x00 ; reset interrupt
 	rjmp reset
@@ -36,8 +45,8 @@ pot_targ: .byte 2 ; target for find pot
 	rjmp pot_handler
 
 ; utilities
-.include "lcd-util.asm"
 .include "util.asm"
+.include "lcd-util.asm"
 .include "pb-util.asm"
 .include "print-string.asm"
 .include "rand.asm"
@@ -61,6 +70,14 @@ remaining_str: defstring "Remaining: "
 found_pot_str: defstring "Position found!"
 scan_str: defstring "Scan for number"
 
+enter_code_str: defstring "Enter Code"
+
+game_complete_str: defstring "Game complete"
+win_str: defstring "You Win!"
+
+game_over_str: defstring "Game over"
+lose_str: defstring "You Lose!"
+
 reset:
 	; clear all registers
 	clr zh
@@ -78,7 +95,7 @@ reset:
 	ldi tmp, low(ramend)
 	out spl, tmp
 	
-	; init lcd
+	; init lcd (also sets the strobe light pin (A2) as output)
 	lcd_init
 
 	; setup portc (LEDs)
@@ -104,6 +121,9 @@ reset:
 	; init motor
 	motor_init
 
+	; init keypad
+	keypad_init
+
 	; init timer0
     ldi tmp, 0b00000000
     out tccr0a, tmp
@@ -125,7 +145,16 @@ main:
 	sleep
 	rjmp main
 
+restart:
+	cli ; disable interrupts
+	rjmp reset
+
 ovf0handler:
+	ispb0
+	brne dont_restart_pb0
+		rcall restart ; restart if pb0 pressed
+	dont_restart_pb0:
+
 	cpi stage, start_screen
 	brne not_start_screen
 		; start screen
@@ -317,7 +346,12 @@ ovf0handler:
 			; clear leds
 			set_led 0
 
-			; init random value for find code TODO			
+			; init random value for find code
+			rcall rand_char
+			sts key_targ, tmp
+			
+			; key must be held for 1s to complete stage
+			write_const_word key_cd, ticks_per_sec
 
 			ldi do_display, 1 ; should display
 			rjmp done_find_pot_read
@@ -345,7 +379,7 @@ ovf0handler:
 				rjmp done_find_pot_read
 			pot_not_over:
 
-			subi_word tmp_wordh, tmp_wordl, 17
+			subi_word tmp_wordh, tmp_wordl, 33
 			cp r16, tmp_wordl
 			cpc r17, tmp_wordh
 			brlt pot_not_16
@@ -382,9 +416,11 @@ ovf0handler:
 		reti
 	not_find_pot:
 
-	cpi stage, find_code
-	brne not_find_code
+	ldi tmp, find_code
+	cpse stage, tmp
+	jmp not_find_code
 		; find code
+
 		; display
 		cpi do_display, 1
 		brne dont_display_find_code
@@ -393,29 +429,168 @@ ovf0handler:
 			puts found_pot_str
 			lcd_row2
 			puts scan_str
-
-			set_motor_speed 0x4A
 		dont_display_find_code:
+
+		rcall read_key
+		lds r17, key_targ
+		cpse r16, r17
+		jmp not_correct_key
+			; correct key pressed
+			set_motor_speed 0x4A
+			read_word tmp_wordh, tmp_wordl, key_cd
+			dec_word tmp_wordh, tmp_wordl
+			write_word key_cd, tmp_wordh, tmp_wordl
+			breq key_held_1s
+			jmp done_check_key
+			key_held_1s:
+				; correct key held for 1s
+				set_motor_speed 0 ; turn off motor
+
+				; add character to key_code
+				ldi xl, low(key_code)
+				ldi xh, high(key_code)
+				add xl, game_iter
+				clr tmp
+				adc xh, tmp
+				st x, r17
+
+				inc game_iter
+				ldi tmp, 3
+				cp game_iter, tmp
+				brne next_game_iter
+					; finished 3 games, go to enter code
+					ldi stage, enter_code
+					clr cur_code_char
+					ldi do_display, 1
+					rjmp done_check_key
+				next_game_iter:
+					; back to reset pot for next round
+					ldi stage, reset_pot
+
+					; init diff_time second countdown
+					lds tmp, diff_time
+					sts timer_cnt, tmp
+					write_const_word timer_cd, ticks_per_sec
+
+					; init pot hold .5s countdown
+					write_const_word pot_cd, ticks_per_sec/2
+
+					ldi do_display, 1 ; should display
+					rjmp done_check_key
+		not_correct_key:
+			; incorrect/no key pressed
+			set_motor_speed 0x00
+			write_const_word key_cd, ticks_per_sec ; must hold key for 1s to complete
+		done_check_key:
+
 		reti
 	not_find_code:
 
 	cpi stage, enter_code
 	brne not_enter_code
 		; enter code
+
+		; display
+		cpi do_display, 1
+		brne dont_display_enter_code
+			clr do_display
+			lcd_clear
+			puts enter_code_str
+			lcd_row2
+			mov tmp, cur_code_char
+			print_asterisks:
+				cpi tmp, 0
+				breq dont_display_enter_code
+				do_lcd_data '*'
+				dec tmp
+				rjmp print_asterisks
+		dont_display_enter_code:
+		
+		rcall read_key_db
+		cpi tmp, '?'
+		breq no_code_char
+			; event occured, need to display next cycle
+			ldi do_display, 1
+
+			ldi xl, low(key_code)
+			ldi xh, high(key_code)
+			add xl, cur_code_char
+			clr r17
+			adc xh, r17
+			ld r17, x
+
+			cp tmp, r17
+			brne wrong_char
+				; correct char
+				inc cur_code_char
+				ldi tmp, 3
+				cp cur_code_char, tmp
+				brne no_code_char
+					; entered full code correctly
+					ldi stage, game_complete
+					rjmp no_code_char
+			wrong_char:
+				; wrong char, reset entered char count
+				clr cur_code_char
+		no_code_char:
 		reti
 	not_enter_code:
+
+	; on an end screen, handle restart conditions
+	ispb1
+	brne dont_restart_pb1
+		rcall restart ; restart if pb1 pressed
+	dont_restart_pb1:
+	rcall read_key_db
+	ldi r17, '?'
+	cpse tmp, r17
+		rcall restart ; restart if key pressed
 
 	cpi stage, game_complete
 	brne not_game_complete
 		; game complete
+
+		; display
+		cpi do_display, 1
+		brne dont_display_game_complete
+			clr do_display
+			lcd_clear
+			puts game_complete_str
+			lcd_row2
+			puts win_str
+		dont_display_game_complete:
+
+		lds tmp, strobe_cd
+		cpi tmp, 0
+		brne dont_toggle
+			; toggle the state of the strobe led
+			in tmp, porta
+			ldi r17, 1<<1 ; strobe bit
+			eor tmp, r17 ; toggle bit
+			out porta, tmp
+
+			; reinit countdown
+			ldi tmp, ticks_per_sec/4 ; 4 toggles a second <=> 2 cycles a second <=> flash at 2Hz
+			sts strobe_cd, tmp
+		dont_toggle:
+		dec tmp
+		sts strobe_cd, tmp
 		reti
 	not_game_complete:
 
 	cpi stage, timeout
 	brne not_timeout
 		; timeout
-		lcd_clear
-		do_lcd_data '&'
+
+		; display
+		cpi do_display, 1
+		brne dont_display_timeout
+			clr do_display
+			lcd_clear
+			puts game_over_str
+			lcd_row2
+			puts lose_str
+		dont_display_timeout:
 		reti
 	not_timeout:
 	
