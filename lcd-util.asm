@@ -1,3 +1,9 @@
+.macro lcd_off
+	do_lcd_command 0b00001000
+.endmacro
+.macro lcd_on
+	do_lcd_command 0b00001100
+.endmacro
 .macro do_lcd_command
     push r16
 	ldi r16, @0
@@ -55,7 +61,7 @@
     do_lcd_command 0b00001000 ; display off?
     do_lcd_command 0b00000001 ; clear display
     do_lcd_command 0b00000110 ; increment, no display shift
-    do_lcd_command 0b00001100 ; Cursor on, bar, no blink
+    do_lcd_command 0b00001100 ; Cursor off, no blink
     pop r16
 .endmacro
 

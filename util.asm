@@ -53,6 +53,16 @@
 	rcall print_int
 .endmacro
 
+.macro print_tmp_word
+	push r16
+	mov r16, tmp_wordh
+	rcall print_int
+	mov r16, tmp_wordl
+	do_lcd_data ' '
+	rcall print_int
+	pop r16
+.endmacro
+
 .equ F_CPU = 16000000
 .equ DELAY_1MS = F_CPU / 4 / 1000 - 4
 .equ DELAY_100NS = F_CPU / 4 / 10000 - 4

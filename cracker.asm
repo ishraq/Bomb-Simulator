@@ -1,5 +1,8 @@
 .include "m2560def.inc"
 
+.def timer0_parity = r11  ; flips between 0 and 1 every timer0 oflow
+.def fade_dir = r12		  ; delta to brightness every second timer0 oflow (-1, 0, 1) (restuls in a fade over 512 oflows ~= .5 seconds)
+.def lcd_brightness = r13 ; lcd brightness
 .def cur_code_char = r14 ; which character is being entered in the Enter Code screen
 .def game_iter = r15 ; how many games have been won so far in current round
 .def tmp = r16
@@ -7,7 +10,9 @@
 .def stage = r23 ; what screen/stage it's at
 .def tmp_wordl = r24
 .def tmp_wordh = r25
+
 .equ ticks_per_sec = 1000 ; oflows of timer0 in 1 sec
+.equ lcd_fade_time = 5*ticks_per_sec ; oflows till lcd starts turning off
 
 .equ pot_eps = 5 ; pot reading < pot_eps is 0
 
@@ -36,13 +41,19 @@ key_code: .byte 3 ; the 3 letter code
 
 strobe_cd: .byte 1 ; the countdown to toggle the strobe
 
+lcd_off_cd: .byte 2 ; the countdown to begin turning off the lcd
+
 .cseg
 .org 0x00 ; reset interrupt
 	rjmp reset
 .org ovf0addr
 	rjmp ovf0handler ; timer0 oflow
-.org 0x3A ; ADC read complete interrupt
-	rjmp pot_handler
+.org ovf1addr
+	rjmp ovf1handler ; timer1 oflow
+.org oc1Aaddr
+	rjmp oc1ahandler ; timer1 compare match
+.org ADCCaddr
+	rjmp pot_handler ; ADC read complete interrupt
 
 ; utilities
 .include "util.asm"
@@ -54,6 +65,7 @@ strobe_cd: .byte 1 ; the countdown to toggle the strobe
 .include "pot-util.asm"
 .include "motor-util.asm"
 .include "keypad-util.asm"
+.include "lcd-fader.asm"
 
 ; constants
 start_str1: defstring "2121 16s1"
@@ -124,6 +136,13 @@ reset:
 	; init keypad
 	keypad_init
 
+	; init lcd fade
+	lcd_fade_init
+	write_const_word lcd_off_cd, lcd_fade_time
+	ldi tmp, 0xff
+	mov lcd_brightness, tmp
+	clr fade_dir
+
 	; init timer0
     ldi tmp, 0b00000000
     out tccr0a, tmp
@@ -150,10 +169,74 @@ restart:
 	rjmp reset
 
 ovf0handler:
+	ldi tmp, 1
+	eor timer0_parity, tmp ; flip parity
+
 	ispb0
 	brne dont_restart_pb0
 		rcall restart ; restart if pb0 pressed
 	dont_restart_pb0:
+
+	; lcd fade handling
+	cpi stage, start_screen
+	breq fade_proc
+	cpi stage, game_complete
+	breq fade_proc
+	cpi stage, timeout
+	breq fade_proc
+		; not a screen which supports fading, set screen to full on and fade_dir = 0
+		ldi tmp, 0xff
+		mov lcd_brightness, tmp
+		clr fade_dir
+		write_const_word lcd_off_cd, lcd_fade_time
+	fade_proc:
+		; need to handle fade logic
+		read_word tmp_wordh, tmp_wordl, lcd_off_cd
+		rcall is_any_keys
+		brne dont_reset_lcd_off_cd
+			; something is pressed so reset lcd off cd and set fade dir to +1
+			ldi tmp_wordh, high(lcd_fade_time)
+			ldi tmp_wordl, low(lcd_fade_time)
+			ldi tmp, 1
+			mov fade_dir, tmp
+			rjmp end_fade_proc
+		dont_reset_lcd_off_cd:
+
+		clr tmp
+		cp tmp_wordl, tmp
+		cpc tmp_wordh, tmp
+		brne not_lcd_fading
+			; cd is 0, set dir to -1
+			ldi tmp, -1
+			mov fade_dir, tmp
+			rjmp end_fade_proc
+		not_lcd_fading:
+			; cd not 0, decrement cd
+			dec_word tmp_wordh, tmp_wordl
+	end_fade_proc:
+	write_word lcd_off_cd, tmp_wordh, tmp_wordl
+
+	clr tmp
+	cp timer0_parity, tmp
+	brne dont_delta_brightness
+		ldi tmp, 1
+		cp fade_dir, tmp
+		ldi tmp, 0xff
+		cpc lcd_brightness, tmp
+		breq dont_delta_brightness ; don't +1 when max brightness
+
+		ldi tmp, -1
+		cp fade_dir, tmp
+		ldi tmp, 0
+		cpc lcd_brightness, tmp
+		breq dont_delta_brightness ; don't -1 when min brightness
+
+		add lcd_brightness, fade_dir ; add delta to brightness
+	dont_delta_brightness:
+
+	mov tmp, lcd_brightness
+	;rcall print_int
+	rcall set_lcd_level
 
 	cpi stage, start_screen
 	brne not_start_screen
