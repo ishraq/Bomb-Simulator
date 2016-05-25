@@ -1,14 +1,13 @@
 .macro motor_init
     push tmp
     ldi tmp, 0b00010000
-    out DDRE, tmp ; Bit 2 will function as OC3B.
+    out DDRE, tmp
     clr tmp
     out PORTE, tmp
     pop tmp
 .endmacro
 
-; set motor speed to value in 0..0xff
-; by setting pwm duty cycle on ocr3b
+; set motor speed to 0 or 1
 .macro set_motor_speed
     push tmp
     push r17
