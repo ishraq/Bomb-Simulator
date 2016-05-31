@@ -7,6 +7,11 @@
 rand_cur: .byte 1
 
 .cseg
+;seed the random number generator
+.macro srand
+	sts rand_cur, tmp
+.endmacro
+
 ;returns a random 8-bit integer in r16
 rand:
     ;pre
@@ -60,3 +65,4 @@ rand_char:
 		; '*'
 		ldi r16, '*'
 		ret
+

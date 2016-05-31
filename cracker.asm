@@ -43,6 +43,8 @@ strobe_cd: .byte 1 ; the countdown to toggle the strobe
 
 lcd_off_cd: .byte 2 ; the countdown to begin turning off the lcd
 
+random_timer: .byte 1 ; a basically random value
+
 .cseg
 .org 0x00 ; reset interrupt
 	rjmp reset
@@ -182,6 +184,11 @@ ovf0handler:
 	; make sound
 	speaker_speak
 
+	; update random timer
+	lds tmp, random_timer
+	inc tmp
+	sts random_timer, tmp
+
 	ispb0
 	brne dont_restart_pb0
 		rcall restart ; restart if pb0 pressed
@@ -267,8 +274,13 @@ ovf0handler:
 		brne dontstart
 			; pressed pb1
 			ldi stage, start_countdown ; next stage
+
 			; beep for 250ms
 			speaker_set_len ticks_per_sec/4
+
+			; seed random
+			lds tmp, random_timer
+			srand
 			
 			; init 3 second countdown
 			ldi tmp, 3
