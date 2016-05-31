@@ -66,6 +66,10 @@ lcd_off_cd: .byte 2 ; the countdown to begin turning off the lcd
 .include "motor-util.asm"
 .include "keypad-util.asm"
 .include "lcd-fader.asm"
+.include "speaker-util.asm"
+
+; re-enter cseg after includes
+.cseg
 
 ; constants
 start_str1: defstring "2121 16s1"
@@ -157,6 +161,9 @@ reset:
 	sts diff_time, tmp
 	ldi do_display, 1 ; should display
 
+	; init speaker
+	speaker_init
+
 	sei
 	rjmp main
 
@@ -171,6 +178,9 @@ restart:
 ovf0handler:
 	ldi tmp, 1
 	eor timer0_parity, tmp ; flip parity
+
+	; make sound
+	speaker_speak
 
 	ispb0
 	brne dont_restart_pb0
@@ -257,6 +267,8 @@ ovf0handler:
 		brne dontstart
 			; pressed pb1
 			ldi stage, start_countdown ; next stage
+			; beep for 250ms
+			speaker_set_len ticks_per_sec/4
 			
 			; init 3 second countdown
 			ldi tmp, 3
@@ -290,7 +302,9 @@ ovf0handler:
 		read_word tmp_wordh, tmp_wordl, timer_cd
 		dec_word tmp_wordh, tmp_wordl
 		write_word timer_cd, tmp_wordh, tmp_wordl
-		brne fin_start_countdown
+		breq skip_fin_start_countdown
+			jmp fin_start_countdown
+		skip_fin_start_countdown:
 			ldi do_display, 1 ; activity occurs, need to refresh screen next cycle
 		
 			; timer countdown is 0, on to next second
@@ -308,18 +322,26 @@ ovf0handler:
 				; init pot hold .5s countdown
 				write_const_word pot_cd, ticks_per_sec/2
 
+				; beep for 500ms
+				speaker_set_len ticks_per_sec/2
+
 				ldi do_display, 1 ; should display
 				rjmp fin_start_countdown
 			countdown_not_fin:
-			; timer second not 0, restart countdown
-			sts timer_cnt, tmp
-			write_const_word timer_cd, ticks_per_sec
+				; timer second not 0, restart countdown
+				sts timer_cnt, tmp
+				write_const_word timer_cd, ticks_per_sec
+
+				; beep for 250ms
+				speaker_set_len ticks_per_sec/4
 		fin_start_countdown:
 		reti
 	not_start_countdown:
 
 	cpi stage, find_pot+1
-	brsh no_timeout_cd
+	brlo no_jmp_to_no_timeout_cd
+		jmp no_timeout_cd
+	no_jmp_to_no_timeout_cd:
 		; reset pot or find pot screen
 		; decrement timer countdown
 		read_word tmp_wordh, tmp_wordl, timer_cd
@@ -336,10 +358,16 @@ ovf0handler:
 				set_led 0 ; clear led
 				ldi do_display, 1 ; should display
 				rjmp no_timeout_cd
+				
+				; beep for 500ms
+				speaker_set_len ticks_per_sec/2
 			timeout_countdown_not_fin:
-			; timer second not 0, restart countdown
-			sts timer_cnt, tmp
-			write_const_word timer_cd, ticks_per_sec
+				; timer second not 0, restart countdown
+				sts timer_cnt, tmp
+				write_const_word timer_cd, ticks_per_sec
+
+				; beep for 250ms
+				speaker_set_len ticks_per_sec/4
 	no_timeout_cd:
 
 	ldi tmp, reset_pot
@@ -536,6 +564,9 @@ ovf0handler:
 				clr tmp
 				adc xh, tmp
 				st x, r17
+				
+				; beep for 500ms
+				speaker_set_len ticks_per_sec/2
 
 				inc game_iter
 				ldi tmp, 3
@@ -641,6 +672,9 @@ ovf0handler:
 			puts game_complete_str
 			lcd_row2
 			puts win_str
+			
+			; beep for 1 second
+			speaker_set_len ticks_per_sec
 		dont_display_game_complete:
 
 		lds tmp, strobe_cd
@@ -673,9 +707,15 @@ ovf0handler:
 			puts game_over_str
 			lcd_row2
 			puts lose_str
+
+			; beep for 1 second
+			speaker_set_len ticks_per_sec
 		dont_display_timeout:
 		reti
+		
+		
 	not_timeout:
 	
 	; this is bad
 	rcall rip
+
