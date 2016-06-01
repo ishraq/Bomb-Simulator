@@ -5,21 +5,15 @@ speaker_len: .byte 2
 .cseg
 .macro speaker_init
 	push tmp
-	push zl
-	push zh
 
 	ldi tmp, 0b00000001
     out DDRB, tmp
 	
 	clr tmp
 	sts speaker_what, tmp
-	ldi zl, low(speaker_len)
-	ldi zh, high(speaker_len)
-	st z, tmp
-	std z+1, tmp
+	sts speaker_len, tmp
+	sts speaker_len + 1, tmp
 
-	pop zh
-	pop zl
 	pop tmp
 .endmacro
 
@@ -57,19 +51,12 @@ speaker_len: .byte 2
 
 .macro speaker_set_len
 	push tmp
-	push zl
-	push zh
 
-	ldi zl, low(speaker_len)
-	ldi zh, high(speaker_len)
 	ldi tmp, low(@0)
-	;rcall set_led_reg
-	st z, tmp
+	sts speaker_len, tmp
 	ldi tmp, high(@0)
-	std z+1, tmp
+	sts speaker_len + 1, tmp
 
-	pop zh
-	pop zl
 	pop tmp
 .endmacro
 
