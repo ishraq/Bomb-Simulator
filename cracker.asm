@@ -27,6 +27,7 @@
 
 .dseg
 diff_time: .byte 1 ; num seconds on current difficulty timer
+diff_level: .byte 1 ; difficulty level as a character
 
 timer_cd: .byte 2 ; overflows till next second completed on timer
 timer_cnt: .byte 1 ; seconds left on timer
@@ -76,6 +77,11 @@ random_timer: .byte 1 ; a basically random value
 ; constants
 start_str1: defstring "2121 16s1"
 start_str2: defstring "Safe Cracker"
+
+diff_strA: defstring " (A)"
+diff_strB: defstring " (B)"
+diff_strC: defstring " (C)"
+diff_strD: defstring " (D)"
 
 start_cd_str1: defstring "2121 16s1"
 start_cd_str2: defstring "Starting in "
@@ -161,6 +167,8 @@ reset:
 	ldi stage, start_screen
 	ldi tmp, 20 ; default difficulty (easy)
 	sts diff_time, tmp
+	ldi tmp, 'A' ; default difficulty level char
+	sts diff_level, tmp
 	ldi do_display, 1 ; should display
 
 	; init speaker
@@ -256,7 +264,9 @@ ovf0handler:
 	rcall set_lcd_level
 
 	cpi stage, start_screen
-	brne not_start_screen
+	breq dont_jmp_not_start_screen
+		jmp not_start_screen
+	dont_jmp_not_start_screen:
 		; start screen
 
 		; display
@@ -267,7 +277,64 @@ ovf0handler:
 			puts start_str1
 			lcd_row2
 			puts start_str2
+			
+			; display difficulty level
+			lds tmp, diff_level
+			cpi tmp, 'A'
+			brne print_diff_isnt_A
+				puts diff_strA
+			print_diff_isnt_A:
+			cpi tmp, 'B'
+			brne print_diff_isnt_B
+				puts diff_strB
+			print_diff_isnt_B:
+			cpi tmp, 'C'
+			brne print_diff_isnt_C
+				puts diff_strC
+			print_diff_isnt_C:
+			cpi tmp, 'D'
+			brne print_diff_isnt_D
+				puts diff_strD
+			print_diff_isnt_D:
 		dont_display_start_screen:
+
+		; set difficulty
+		rcall read_key_db
+		cpi tmp, '?'
+		breq dont_set_difficulty
+			; do display
+			ldi do_display, 1
+
+			; set difficulty level character
+			sts diff_level, tmp
+
+			; set difficulty time
+			cpi tmp, 'A'
+			brne set_diff_isnt_A
+				ldi tmp, 20
+				sts diff_time, tmp
+				rjmp set_diff_done
+			set_diff_isnt_A:
+			cpi tmp, 'B'
+			brne set_diff_isnt_B
+				ldi tmp, 15
+				sts diff_time, tmp
+				rjmp set_diff_done
+			set_diff_isnt_B:
+			cpi tmp, 'C'
+			brne set_diff_isnt_C
+				ldi tmp, 10
+				sts diff_time, tmp
+				rjmp set_diff_done
+			set_diff_isnt_C:
+			cpi tmp, 'D'
+			brne set_diff_isnt_D
+				ldi tmp, 6
+				sts diff_time, tmp
+				rjmp set_diff_done
+			set_diff_isnt_D:
+			set_diff_done:
+		dont_set_difficulty:
 
 		; check if continue to next screen
 		ispb1
@@ -502,7 +569,7 @@ ovf0handler:
 				rjmp done_find_pot_read
 			pot_not_over:
 
-			subi_word tmp_wordh, tmp_wordl, 33
+			subi_word tmp_wordh, tmp_wordl, 33 ; should be 17 and change the 3 bitmasks below
 			cp r16, tmp_wordl
 			cpc r17, tmp_wordh
 			brlt pot_not_16
