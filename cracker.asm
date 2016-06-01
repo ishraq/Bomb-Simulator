@@ -300,8 +300,10 @@ ovf0handler:
 
 		; set difficulty
 		rcall read_key_db
-		cpi tmp, '?'
-		breq dont_set_difficulty
+		cpi tmp, 'A'
+		brlt dont_set_difficulty
+		cpi tmp, 'D'+1
+		brge dont_set_difficulty
 			; do display
 			ldi do_display, 1
 
