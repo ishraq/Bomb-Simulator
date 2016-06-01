@@ -27,11 +27,13 @@ speaker_len: .byte 2
 	clr r18
 	cpi r24, 0
 	cpc r25, r18
+	; if speaker_len is greater than 0 (ie we're still speaking)
 	breq speaker_speak_done
 		sbiw r25:r24, 1
 		sts speaker_len, r24
 		sts speaker_len + 1, r25
 
+		; flip whether the speaker is on or off
 		lds r24, speaker_what
 		cpi r24, 0
 		breq speaker_speak_zero
@@ -40,8 +42,10 @@ speaker_len: .byte 2
 		speaker_speak_zero:
 			ldi r24, 1
 		speaker_speak_end:
-		out PORTB, r24
 		sts speaker_what, r24
+		
+		; output to the speaker		
+		out PORTB, r24
 	speaker_speak_done:
 
 	pop r18
